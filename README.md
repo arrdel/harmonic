@@ -1,7 +1,11 @@
 # HARMONIC
 ## Hierarchical Attention-based Reconciliation of Multimodal ONtologies for Image Creation
 
-![HARMONIC Banner](assets/banner.svg)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/banner.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/banner.svg">
+  <img alt="HARMONIC Banner" src="assets/banner.png">
+</picture>
 
 A novel semantic conflict resolution framework for multimodal guided diffusion.
 
