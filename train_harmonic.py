@@ -240,49 +240,55 @@ class HARMONICTrainer:
             'image_weight': output['w_img'].mean().item()
         }
         
-        # Loss 1: Reconstruction - guidance should preserve information
-        recon_loss = F.mse_loss(guidance_embed, (text_embed + image_embed) / 2)
+        # Loss 1: Reconstruction - guidance should preserve information from both modalities
+        # Target: weighted combination based on conflict (low conflict = simple average)
+        target_embed = (text_embed + image_embed) / 2
+        recon_loss = F.mse_loss(guidance_embed, target_embed)
         
-        # Loss 2: Contrast - different conflicts should produce different outputs
+        # Loss 2: Alignment - guidance should be similar to both inputs
+        # Encourages the model to extract useful information from both
+        text_align = 1 - F.cosine_similarity(guidance_embed, text_embed).mean()
+        image_align = 1 - F.cosine_similarity(guidance_embed, image_embed).mean()
+        align_loss = (text_align + image_align) / 2
+        
+        # Loss 3: Diversity - different inputs should produce different outputs
         batch_size = text_embed.shape[0]
         if batch_size > 1:
-            # Shuffle image embeddings to create mismatched pairs
-            shuffled_idx = torch.randperm(batch_size, device=self.device)
-            mismatched_image = image_embed[shuffled_idx]
-            
-            # Get guidance for mismatched pair
-            mismatch_output = self.harmonic(text_embed, mismatched_image, timestep, return_all=True)
-            mismatch_guidance = mismatch_output['guidance']
-            
-            # Different conflicts should produce different outputs
-            contrast_loss = -F.cosine_similarity(
-                guidance_embed - mismatch_guidance,
-                text_embed - mismatched_image
-            ).mean().clamp(min=-1, max=1)
+            # Compare guidance embeddings within batch
+            # Normalize embeddings
+            guidance_norm = F.normalize(guidance_embed, dim=-1)
+            # Compute pairwise similarities
+            sim_matrix = torch.mm(guidance_norm, guidance_norm.t())
+            # We want off-diagonal elements to be low (diverse outputs)
+            mask = ~torch.eye(batch_size, dtype=torch.bool, device=self.device)
+            diversity_loss = sim_matrix[mask].mean().clamp(min=0)
         else:
-            contrast_loss = torch.tensor(0.0, device=self.device)
+            diversity_loss = torch.tensor(0.0, device=self.device)
         
-        # Loss 3: Temporal smoothness - similar timesteps should give similar weights
+        # Loss 4: Temporal smoothness - similar timesteps should give similar weights
         if timestep > 0:
             prev_timestep = timestep - 1
-            prev_output = self.harmonic(text_embed, image_embed, prev_timestep, return_all=True)
+            with torch.no_grad():
+                prev_output = self.harmonic(text_embed, image_embed, prev_timestep, return_all=True)
             temporal_loss = F.mse_loss(
                 torch.stack([output['w_text'], output['w_img']]),
-                torch.stack([prev_output['w_text'], prev_output['w_img']])
+                torch.stack([prev_output['w_text'].detach(), prev_output['w_img'].detach()])
             )
         else:
             temporal_loss = torch.tensor(0.0, device=self.device)
         
-        # Combined loss
+        # Combined loss - all components should be non-negative
         total_loss = (
             self.args.recon_weight * recon_loss +
-            self.args.contrast_weight * contrast_loss +
+            0.5 * align_loss +  # New alignment term
+            self.args.contrast_weight * diversity_loss +  # Renamed from contrast
             self.args.temporal_weight * temporal_loss
         )
         
         return total_loss, {
             'recon_loss': recon_loss.item(),
-            'contrast_loss': contrast_loss.item(),
+            'align_loss': align_loss.item(),
+            'diversity_loss': diversity_loss.item(),
             'temporal_loss': temporal_loss.item(),
             'conflict_score': info['conflict_score'],
             'text_weight': info['text_weight'],
@@ -334,7 +340,8 @@ class HARMONICTrainer:
                 wandb.log({
                     'train/loss': loss.item(),
                     'train/recon_loss': metrics['recon_loss'],
-                    'train/contrast_loss': metrics['contrast_loss'],
+                    'train/align_loss': metrics['align_loss'],
+                    'train/diversity_loss': metrics['diversity_loss'],
                     'train/temporal_loss': metrics['temporal_loss'],
                     'train/conflict_score': metrics['conflict_score'],
                     'train/text_weight': metrics['text_weight'],
