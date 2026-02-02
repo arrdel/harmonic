@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# CLIP (clone separately)
+CLIP/
+
+# Models and checkpoints (too large for git)
+models/
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# Logs
+logs/
+*.log
+wandb/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Results
+results/
+output/
