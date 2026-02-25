@@ -134,13 +134,12 @@ class HARMONIC(nn.Module):
         """
         batch_size = text_embed.shape[0]
         
-        # Ensure inputs are on the right device
-        text_embed = text_embed.to(self.device)
-        image_embed = image_embed.to(self.device)
+        # Use input tensor device (DataParallel compatible - each replica gets its own device)
+        device = text_embed.device
         if isinstance(timestep, int):
-            timestep = torch.tensor([timestep], device=self.device)
+            timestep = torch.tensor([timestep], device=device)
         else:
-            timestep = timestep.to(self.device)
+            timestep = timestep.to(device)
         
         # Step 1: Detect semantic conflict
         conflict_result = self.conflict_detector(text_embed, image_embed)

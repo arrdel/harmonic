@@ -144,6 +144,15 @@ class HARMONICTrainer:
             device=str(self.device)
         ).to(self.device)
         
+        # Wrap in DataParallel if multiple GPUs visible
+        self.num_gpus = torch.cuda.device_count()
+        if self.num_gpus > 1:
+            print(f"Using DataParallel across {self.num_gpus} GPUs")
+            self.harmonic = nn.DataParallel(self.harmonic)
+        
+        # Keep reference to underlying module for saving/loading
+        self.harmonic_module = self.harmonic.module if self.num_gpus > 1 else self.harmonic
+        
         # Optimizer
         self.optimizer = AdamW(
             self.harmonic.parameters(),
@@ -252,10 +261,10 @@ class HARMONICTrainer:
             # Compute pairwise similarities
             sim_matrix = torch.mm(guidance_norm, guidance_norm.t())
             # We want off-diagonal elements to be low (diverse outputs)
-            mask = ~torch.eye(batch_size, dtype=torch.bool, device=self.device)
+            mask = ~torch.eye(batch_size, dtype=torch.bool, device=guidance_embed.device)
             diversity_loss = sim_matrix[mask].mean().clamp(min=0)
         else:
-            diversity_loss = torch.tensor(0.0, device=self.device)
+            diversity_loss = torch.tensor(0.0, device=guidance_embed.device)
         
         # Loss 4: Temporal smoothness - similar timesteps should give similar weights
         if timestep > 0:
@@ -267,7 +276,7 @@ class HARMONICTrainer:
                 torch.stack([prev_output['w_text'].detach(), prev_output['w_img'].detach()])
             )
         else:
-            temporal_loss = torch.tensor(0.0, device=self.device)
+            temporal_loss = torch.tensor(0.0, device=guidance_embed.device)
         
         # Combined loss - all components should be non-negative
         total_loss = (
@@ -381,7 +390,7 @@ class HARMONICTrainer:
         """Save model checkpoint."""
         checkpoint = {
             'epoch': epoch,
-            'model_state_dict': self.harmonic.state_dict(),
+            'model_state_dict': self.harmonic_module.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'loss': loss,
@@ -407,7 +416,7 @@ class HARMONICTrainer:
         print(f"Loading checkpoint from {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
         
-        self.harmonic.load_state_dict(checkpoint['model_state_dict'])
+        self.harmonic_module.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
         
