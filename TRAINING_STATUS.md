@@ -1,113 +1,86 @@
 # HARMONIC Training Setup - Status
 
-## ✅ Completed Setup
+## ✅ Environment Setup Complete (Feb 25, 2026)
 
-### 1. Dataset Download (In Progress)
+### Conda Environment: `harmonic_env`
+- **Python**: 3.10
+- **PyTorch**: 2.5.1+cu121
+- **CUDA**: 6x NVIDIA GeForce RTX 4090 (24GB each)
+- **Key packages**: CLIP, guided-diffusion, transformers, accelerate, wandb, lpips, einops
+
+### Activate with:
+```bash
+conda activate harmonic_env
+```
+
+## ✅ Dataset Ready
+
+### COCO 2017 Train
 - **Location**: `/media/scratch/adele/harmonic/dataset/`
-- **Status**: Downloading COCO 2017 Train (~18GB)
-  - Current: ~6.5GB downloaded (36%)
-  - ETA: ~6-8 minutes remaining
-- **Monitor**: Background process extracting when complete
-  - Log: `tail -f logs/coco_setup.log`
+- **Symlink**: `data/coco` → `/media/scratch/adele/harmonic/dataset/`
+- **Images**: 118,288 training images (`train2017/`)
+- **Captions**: 118,287 image-caption pairs (`captions.json`)
+- **Annotations**: Full COCO annotations in `annotations/`
 
-### 2. Annotations Ready ✓
-- **COCO Annotations**: Extracted
-- **Captions Created**: 118,287 image-caption pairs
-- **File**: `/media/scratch/adele/harmonic/dataset/captions.json`
+## ✅ Core Architecture Verified
 
-### 3. Symlinks Configured ✓
-- **HARMONIC data/coco** → `/media/scratch/adele/harmonic/dataset`
+### HARMONIC Module (8.4M parameters)
+- **Semantic Conflict Detector**: Multi-head attention decomposition (8 heads)
+- **Cross-Modal Attention Fusion**: Bidirectional cross-attention (2 layers)
+- **Temporal Guidance Scheduler**: Conflict-aware cosine scheduling
+- **Self-test**: ✅ All tests passed on CUDA
 
-### 4. Training Scripts Ready ✓
-- `train_multi_gpu.sh` - Multi-GPU training (2 GPUs)
-- `launch_training.sh` - Complete training pipeline
-- `scripts/wait_and_extract_coco.sh` - Auto-extraction monitor
+### HARMONIC Lite (1.3M parameters)
+- Lightweight variant for faster inference
+- **Self-test**: ✅ Passed
+
+## ✅ External Dependencies
+- **CLIP** (`CLIP/`): OpenAI CLIP ViT-B/32 - installed in editable mode
+- **guided-diffusion** (`guided-diffusion/`): OpenAI guided diffusion - installed in editable mode
 
 ## 📊 Training Configuration
 
 | Parameter | Value |
 |-----------|-------|
 | **Dataset** | COCO 2017 Train (118K images) |
-| **GPUs** | 2 (GPU 0, GPU 1) |
+| **GPUs** | 2 (configurable, 6 available) |
 | **Batch Size** | 32 per GPU (64 total) |
 | **Epochs** | 200 |
 | **Learning Rate** | 1e-4 |
 | **Scheduler** | Cosine Annealing |
 | **Schedule Type** | conflict_aware |
 
-## 🚀 How to Start Training
+## 🚀 Next Steps
 
-### Option 1: Automatic (Recommended)
+### 1. Download Pretrained Diffusion Models
 ```bash
-cd /home/adelechinda/home/semester_projects/spring_26/computer_vision/HARMONIC
-bash launch_training.sh
+conda activate harmonic_env
+cd /home/adelechinda/home/projects/harmonic
+mkdir -p /media/scratch/adele/harmonic/models
+
+# 256x256 model (~2GB)
+wget -O /media/scratch/adele/harmonic/models/256x256_diffusion_uncond.pt \
+    "https://openaipublic.blob.core.windows.net/diffusion/jul-2021/256x256_diffusion_uncond.pt"
+
+# 512x512 model (~2GB)
+wget -O /media/scratch/adele/harmonic/models/512x512_diffusion_uncond_finetune_008100.pt \
+    "https://openaipublic.blob.core.windows.net/diffusion/jul-2021/512x512_diffusion_uncond_finetune_008100.pt"
 ```
 
-This will:
-1. Wait for dataset extraction (if not done)
-2. Verify setup
-3. Clean old checkpoints (optional)
-4. Launch multi-GPU training
-
-### Option 2: Manual
+### 2. Start Training
 ```bash
-# Wait for download to complete
-tail -f logs/coco_setup.log
-
-# When you see "✅ COCO Dataset Ready!", run:
-cd /home/adelechinda/home/semester_projects/spring_26/computer_vision/HARMONIC
+conda activate harmonic_env
+cd /home/adelechinda/home/projects/harmonic
 bash train_multi_gpu.sh
 ```
 
-## 📈 Monitoring Training
-
-### GPU Usage
+### 3. Monitor Training
 ```bash
-nvtop
+nvtop                           # GPU usage
+tail -f logs/training_*.log     # Training progress
 ```
 
-### Training Progress
-```bash
-tail -f logs/training_*.log
-```
-
-### Checkpoints
-- Saved every 20 epochs to `checkpoints/`
-- Latest: `checkpoints/latest.pt`
-- Best: `checkpoints/best.pt`
-
-## 🔍 Current Status Check
-
-```bash
-# Check dataset download progress
-ls -lh /media/scratch/adele/harmonic/dataset/train2017.zip
-
-# Check if extraction is complete
-ls -lh /media/scratch/adele/harmonic/dataset/train2017/ | head
-
-# Check extraction monitor
-tail logs/coco_setup.log
-```
-
-## ⏱️ Estimated Timeline
-
-1. **Download**: ~10 more minutes (36% complete)
-2. **Extraction**: ~5-10 minutes
-3. **Total until ready**: ~15-20 minutes
-
-## 🎯 Expected Training Time
-
-- **Per Epoch**: ~45 minutes (118K images, batch size 64)
-- **200 Epochs**: ~150 hours (~6 days)
+## ⏱️ Estimated Training Time
+- **Per Epoch**: ~45 minutes (118K images, batch size 64, 2 GPUs)
+- **Full Training (200 epochs)**: ~6.25 days
 - **Checkpoints saved**: Every 20 epochs
-
-## 📝 Notes
-
-- Loss function has been fixed (no more negative values)
-- Training uses corrected loss with alignment + diversity terms
-- All components verified working (tested with 5 epochs)
-- Multi-GPU setup ready (no DDP needed for simple parallelism)
-
----
-
-**Next Step**: Wait for extraction monitor to complete, then run `bash launch_training.sh`

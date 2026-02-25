@@ -3,7 +3,7 @@
 
 set -e
 
-HARMONIC_DIR="/home/adelechinda/home/semester_projects/spring_26/computer_vision/HARMONIC"
+HARMONIC_DIR="/home/adelechinda/home/projects/harmonic"
 DATASET_DIR="/media/scratch/adele/harmonic/dataset"
 TRAIN_DIR="$DATASET_DIR/train2017"
 

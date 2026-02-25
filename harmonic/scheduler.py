@@ -251,8 +251,10 @@ class TemporalGuidanceScheduler(nn.Module):
         Returns:
             Dictionary with timesteps and corresponding weights
         """
-        timesteps = torch.linspace(0, self.max_timesteps, num_points)
-        conflict = torch.full((num_points,), conflict_score)
+        # Determine device from model parameters
+        device = next(self.parameters()).device if len(list(self.parameters())) > 0 else torch.device('cpu')
+        timesteps = torch.linspace(0, self.max_timesteps, num_points, device=device)
+        conflict = torch.full((num_points,), conflict_score, device=device)
         
         w_text_list = []
         w_img_list = []
@@ -263,8 +265,8 @@ class TemporalGuidanceScheduler(nn.Module):
             w_img_list.append(w_img.item())
         
         return {
-            'timesteps': timesteps.numpy(),
-            't_normalized': (timesteps / self.max_timesteps).numpy(),
+            'timesteps': timesteps.cpu().numpy(),
+            't_normalized': (timesteps / self.max_timesteps).cpu().numpy(),
             'w_text': w_text_list,
             'w_img': w_img_list,
             'conflict_score': conflict_score

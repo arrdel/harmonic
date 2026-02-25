@@ -27,7 +27,7 @@ echo ""
 
 # Run training with DDP
 CUDA_VISIBLE_DEVICES=$GPUS \
-/home/adelechinda/home/semester_projects/spring_26/computer_vision/.conda/bin/python \
+conda run -n harmonic_env --no-capture-output python \
     train_harmonic.py \
     --train_data $DATA_DIR \
     --epochs $EPOCHS \
