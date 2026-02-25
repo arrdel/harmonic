@@ -60,12 +60,10 @@ from harmonic import (
 class TextImageDataset(Dataset):
     """Dataset for paired text-image training."""
     
-    def __init__(self, data_dir, transform=None, clip_model=None, clip_preprocess=None, device='cpu'):
+    def __init__(self, data_dir, transform=None, clip_preprocess=None):
         self.data_dir = Path(data_dir)
         self.transform = transform
-        self.clip_model = clip_model
         self.clip_preprocess = clip_preprocess
-        self.device = device
         
         # Find all image files
         self.image_files = []
@@ -95,28 +93,26 @@ class TextImageDataset(Dataset):
         # Load image
         image = Image.open(img_path).convert('RGB')
         if self.transform:
-            image = self.transform(image)
+            image_tensor = self.transform(image)
+        else:
+            image_tensor = torch.zeros(3, 224, 224)
         
         # Get caption
         caption = self.captions.get(img_path.name, "")
         
-        # Pre-compute CLIP embeddings if available
-        if self.clip_model is not None and self.clip_preprocess is not None:
-            with torch.no_grad():
-                clip_image = self.clip_preprocess(Image.open(img_path)).unsqueeze(0).to(self.device)
-                image_embed = self.clip_model.encode_image(clip_image).squeeze(0).float().cpu()
-                
-                text_tokens = clip.tokenize([caption], truncate=True).to(self.device)
-                text_embed = self.clip_model.encode_text(text_tokens).squeeze(0).float().cpu()
+        # Prepare CLIP inputs on CPU (encoding happens in training loop on GPU)
+        if self.clip_preprocess is not None:
+            clip_image = self.clip_preprocess(Image.open(img_path))  # CPU tensor
         else:
-            image_embed = torch.zeros(512)
-            text_embed = torch.zeros(512)
+            clip_image = torch.zeros(3, 224, 224)
+        
+        text_tokens = clip.tokenize([caption], truncate=True).squeeze(0) if CLIP_AVAILABLE else torch.zeros(77, dtype=torch.long)
         
         return {
-            'image': image,
+            'image': image_tensor,
+            'clip_image': clip_image,
+            'text_tokens': text_tokens,
             'caption': caption,
-            'image_embed': image_embed,
-            'text_embed': text_embed,
             'path': str(img_path)
         }
 
@@ -185,13 +181,11 @@ class HARMONICTrainer:
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
         
-        # Training dataset
+        # Training dataset - CLIP encoding happens in train loop, not workers
         train_dataset = TextImageDataset(
             self.args.train_data,
             transform=transform,
-            clip_model=self.clip_model,
             clip_preprocess=self.clip_preprocess,
-            device=self.device
         )
         
         self.train_loader = DataLoader(
@@ -207,9 +201,7 @@ class HARMONICTrainer:
             val_dataset = TextImageDataset(
                 self.args.val_data,
                 transform=transform,
-                clip_model=self.clip_model,
                 clip_preprocess=self.clip_preprocess,
-                device=self.device
             )
             
             self.val_loader = DataLoader(
@@ -303,8 +295,12 @@ class HARMONICTrainer:
         
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}")
         for batch in pbar:
-            text_embed = batch['text_embed'].to(self.device)
-            image_embed = batch['image_embed'].to(self.device)
+            # Encode with CLIP on GPU (main process, not in DataLoader workers)
+            with torch.no_grad():
+                clip_images = batch['clip_image'].to(self.device)
+                text_tokens = batch['text_tokens'].to(self.device)
+                image_embed = self.clip_model.encode_image(clip_images).float()
+                text_embed = self.clip_model.encode_text(text_tokens).float()
             
             # Sample random timestep
             timestep = torch.randint(0, self.args.num_timesteps, (1,)).item()
@@ -362,8 +358,11 @@ class HARMONICTrainer:
         num_batches = 0
         
         for batch in tqdm(self.val_loader, desc="Validating"):
-            text_embed = batch['text_embed'].to(self.device)
-            image_embed = batch['image_embed'].to(self.device)
+            # Encode with CLIP on GPU
+            clip_images = batch['clip_image'].to(self.device)
+            text_tokens = batch['text_tokens'].to(self.device)
+            image_embed = self.clip_model.encode_image(clip_images).float()
+            text_embed = self.clip_model.encode_text(text_tokens).float()
             
             timestep = self.args.num_timesteps // 2  # Use middle timestep for validation
             
