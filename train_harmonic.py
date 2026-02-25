@@ -447,10 +447,11 @@ class HARMONICTrainer:
                 print(f"  Val Loss:   {val_loss:.4f}")
             print(f"  LR: {self.scheduler.get_last_lr()[0]:.2e}")
             
-            # Save checkpoint
-            is_best = val_loss is not None and val_loss < best_loss
+            # Save checkpoint - track best by val_loss if available, else train_loss
+            current_loss = val_loss if val_loss is not None else train_loss
+            is_best = current_loss < best_loss
             if is_best:
-                best_loss = val_loss
+                best_loss = current_loss
             self.save_checkpoint(epoch, train_loss, is_best)
         
         print("\n" + "="*60)
